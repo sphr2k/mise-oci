@@ -13,14 +13,14 @@ printf 'Integration evidence: %s\n' "$work"
 mkdir -p "$work/certs" "$work/publish" "$work/consumer" "$work/anonymous"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
     -keyout "$work/tls.key" -out "$work/certs/tls.crt" \
-    -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' > "$work/openssl.log" 2>&1
+    -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,DNS:localhost.,IP:127.0.0.1' > "$work/openssl.log" 2>&1
 cp "$work/tls.key" "$work/certs/tls.key"
 docker run --detach --name "$container" -p 127.0.0.1::5000 \
     -v "$work/certs:/certs:ro" \
     -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/tls.crt \
     -e REGISTRY_HTTP_TLS_KEY=/certs/tls.key registry:3 > "$work/registry-id"
 port=$(docker port "$container" 5000/tcp | sed 's/.*://')
-repository="localhost:$port/mise-oci-test"
+repository="localhost.:$port/mise-oci-test"
 export SSL_CERT_FILE="$work/certs/tls.crt"
 for attempt in $(seq 1 30); do
     if curl --silent --fail --cacert "$SSL_CERT_FILE" "https://localhost:$port/v2/" >/dev/null; then break; fi
@@ -37,13 +37,13 @@ for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
     printf '#!/bin/sh\nprintf "oci fixture %s\\n"\n' "$platform" > "$work/publish/$suffix/ocifixture"
     chmod 755 "$work/publish/$suffix/ocifixture"
     tar -czf "$work/publish/$suffix/ocifixture.tar.gz" -C "$work/publish/$suffix" ocifixture
-    (cd "$work/publish/$suffix" && oras push \
+    (cd "$work/publish/$suffix" && oras push --plain-http=false \
         --artifact-type application/vnd.mise.tool.v1 --artifact-platform "$platform" \
         "$repository:build-$suffix" ocifixture.tar.gz:application/gzip)
 done
-oras manifest index create "$repository:v1.2.3" \
+oras manifest index create --plain-http=false "$repository:v1.2.3" \
     build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
-index_digest=$(oras resolve "$repository:v1.2.3")
+index_digest=$(oras resolve --plain-http=false "$repository:v1.2.3")
 cosign sign --yes --key "$work/test.key" --bundle "$work/bundle.json" "$repository@$index_digest"
 
 export MISE_DATA_DIR="$work/mise data"

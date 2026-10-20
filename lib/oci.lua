@@ -25,7 +25,10 @@ local function check_file(path, descriptor)
 end
 
 local function manifest(repository, digest, path, descriptor)
-    run('oras manifest fetch --output "$FILE" "$REF"', { FILE = path, REF = repository .. "@" .. digest })
+    run(
+        'oras manifest fetch --plain-http=false --output "$FILE" "$REF"',
+        { FILE = path, REF = repository .. "@" .. digest }
+    )
     if descriptor then
         check_file(path, descriptor)
     else
@@ -53,7 +56,7 @@ end
 
 function M.list_versions(ctx)
     local options = contract.options(ctx.options, ctx.tool)
-    local tags = run('oras repo tags "$REPOSITORY"', { REPOSITORY = options.repository })
+    local tags = run('oras repo tags --plain-http=false "$REPOSITORY"', { REPOSITORY = options.repository })
     return versions.from_tags(tags, options.prefix)
 end
 
@@ -65,8 +68,9 @@ function M.install(ctx)
     assert(#tag <= 128, "OCI tag exceeds 128 characters")
     run('mkdir -p "$DIR"', { DIR = ctx.download_path })
 
-    local resolved =
-        run('oras resolve "$REF"', { REF = options.repository .. ":" .. tag }):match("^%s*(sha256:%x+)%s*$")
+    local resolved = run('oras resolve --plain-http=false "$REF"', { REF = options.repository .. ":" .. tag }):match(
+        "^%s*(sha256:%x+)%s*$"
+    )
     local digest = contract.digest(resolved)
     assert(not options.digest or digest == options.digest, "configured index digest does not match resolved tag")
     local ref = options.repository .. "@" .. digest
@@ -78,7 +82,10 @@ function M.install(ctx)
         manifest(options.repository, selected.digest, file.join_path(ctx.download_path, "manifest.json"), selected)
     local layer = contract.archive(child)
     local archive = file.join_path(ctx.download_path, "tool.tar.gz")
-    run('oras blob fetch --output "$FILE" "$REF"', { FILE = archive, REF = options.repository .. "@" .. layer.digest })
+    run(
+        'oras blob fetch --plain-http=false --output "$FILE" "$REF"',
+        { FILE = archive, REF = options.repository .. "@" .. layer.digest }
+    )
     check_file(archive, layer)
 
     local listing = run('tar -tzf "$ARCHIVE"', { ARCHIVE = archive })
