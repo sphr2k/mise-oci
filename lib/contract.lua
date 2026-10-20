@@ -30,7 +30,13 @@ function M.options(options, tool)
     assert(prefix == "" or prefix:match("^[%w_][%w_.-]*$"), "invalid tag_prefix")
     local key = options.public_key
     local issuer, subject = options.issuer, options.subject
-    if key then
+    local verification = options.verification or "cosign"
+    assert(verification == "cosign" or verification == "digest", "verification must be cosign or digest")
+    local digest = options.digest and M.digest(options.digest)
+    if verification == "digest" then
+        assert(digest, "verification=digest requires an explicit index digest")
+        assert(not key and not issuer and not subject, "digest mode does not accept signer options")
+    elseif key then
         required(key, "public_key")
         assert(not issuer and not subject, "use public_key OR issuer and subject")
     else
@@ -38,7 +44,10 @@ function M.options(options, tool)
         required(subject, "subject")
         assert(issuer:match("^https://"), "issuer must use https")
     end
-    assert(options.verify == nil and options.insecure == nil, "verification cannot be disabled")
+    assert(
+        options.verify == nil and options.insecure == nil,
+        "use verification=digest with an explicit digest instead of skip flags"
+    )
     return {
         repository = repository,
         binary = binary,
@@ -46,7 +55,8 @@ function M.options(options, tool)
         key = key,
         issuer = issuer,
         subject = subject,
-        digest = options.digest and M.digest(options.digest),
+        digest = digest,
+        verification = verification,
     }
 end
 

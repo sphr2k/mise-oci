@@ -67,10 +67,29 @@ test("unsafe options rejected", function()
     rejects("filename", function()
         contract.options(options({ binary = "../escape" }), "tool")
     end)
-    rejects("disabled", function()
+    rejects("skip flags", function()
         contract.options(options({ verify = "false" }), "tool")
     end)
 end)
+test("digest-only requires a pin and rejects ambiguous trust", function()
+    local config = { repository = "ghcr.io/example/tool", verification = "digest", digest = digest }
+    assert(contract.options(config, "tool").verification == "digest")
+    config.digest = nil
+    rejects("requires an explicit", function()
+        contract.options(config, "tool")
+    end)
+    config.digest = digest
+    config.public_key = "/key.pub"
+    rejects("does not accept signer", function()
+        contract.options(config, "tool")
+    end)
+    config.public_key = nil
+    config.verification = "none"
+    rejects("verification must be", function()
+        contract.options(config, "tool")
+    end)
+end)
+
 test("digest validation", function()
     assert(contract.digest(digest) == digest)
     rejects("sha256", function()
@@ -264,6 +283,26 @@ test("verify signed index before fetching children; publish last", function()
         end
     end
 end)
+test("digest-only installs without calling Cosign", function()
+    local ctx = setup()
+    ctx.options.public_key = nil
+    ctx.options.verification = "digest"
+    fail = "cosign verify"
+    oci.install(ctx)
+    assert(not command_index("cosign verify"))
+    assert(calls[#calls].command == "publish")
+end)
+test("digest-only rejects mismatching content before publication", function()
+    local ctx = setup()
+    ctx.options.public_key = nil
+    ctx.options.verification = "digest"
+    raw_manifest.layers[1].digest = "sha256:" .. string.rep("b", 64)
+    rejects("digest mismatch", function()
+        oci.install(ctx)
+    end)
+    assert(not command_index("publish"))
+end)
+
 test("signature failure prevents download and publication", function()
     local ctx = setup()
     fail = "cosign verify"

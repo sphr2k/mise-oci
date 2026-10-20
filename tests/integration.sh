@@ -55,6 +55,10 @@ oras manifest index create --plain-http=false "$repository:v1.2.3" \
 index_digest=$(oras resolve --plain-http=false "$repository:v1.2.3")
 cosign sign --yes --key "$work/test.key" --bundle "$work/bundle.json" "$repository@$index_digest"
 
+oras manifest index create --plain-http=false --annotation test.mise-oci=unsigned "$repository:v1.2.4" \
+    build-linux-amd64 build-linux-arm64 build-darwin-amd64 build-darwin-arm64
+unsigned_digest=$(oras resolve --plain-http=false "$repository:v1.2.4")
+
 export MISE_DATA_DIR="$work/mise data"
 export MISE_CONFIG_DIR="$work/mise config"
 export MISE_CACHE_DIR="$work/mise cache"
@@ -64,6 +68,7 @@ cat > mise.toml <<CONFIG
 [tools]
 oras = "1.3.4"
 cosign = "3.1.3"
+"oci:unsigned" = { version = "1.2.4", binary = "ocifixture", repository = "$repository", tag_prefix = "v", verification = "digest", digest = "$unsigned_digest" }
 "oci:ocifixture" = { version = "1.2.3", repository = "$repository", tag_prefix = "v", public_key = "$work/test.pub", digest = "$index_digest" }
 CONFIG
 mise trust
@@ -75,11 +80,18 @@ case $(uname -m) in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) exit 1
 actual=$(mise exec oci:ocifixture@1.2.3 -- ocifixture)
 [ "$actual" = "oci fixture $os/$arch" ]
 printf '%s\n' "$actual"
+unsigned_actual=$(mise exec oci:unsigned@1.2.4 -- ocifixture)
+[ "$unsigned_actual" = "$actual" ]
 
 cat >> mise.toml <<CONFIG
+"oci:unsigned-cosign" = { version = "1.2.4", binary = "ocifixture", repository = "$repository", tag_prefix = "v", public_key = "$work/test.pub", digest = "$unsigned_digest" }
 "oci:wrong-key" = { version = "1.2.3", binary = "ocifixture", repository = "$repository", tag_prefix = "v", public_key = "$work/wrong.pub" }
 "oci:wrong-pin" = { version = "1.2.3", binary = "ocifixture", repository = "$repository", tag_prefix = "v", public_key = "$work/test.pub", digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
 CONFIG
+if mise install oci:unsigned-cosign@1.2.4 > "$work/unsigned-cosign.log" 2>&1; then
+    echo 'Unsigned index unexpectedly accepted in default Cosign mode' >&2; exit 1
+fi
+grep -E 'no signatures|no matching' "$work/unsigned-cosign.log"
 if mise install oci:wrong-key@1.2.3 > "$work/wrong-key.log" 2>&1; then
     echo 'Wrong key unexpectedly accepted' >&2; exit 1
 fi
@@ -89,4 +101,4 @@ fi
 grep -F 'configured index digest does not match' "$work/wrong-pin.log"
 # Check the negative failed in cryptographic verification, rather than tool setup.
 grep -E 'no matching|signature|transparency log' "$work/wrong-key.log"
-printf 'PASS: signed multiarch installation, wrong-key rejection, wrong-pin rejection\n'
+printf 'PASS: signed and digest-only multiarch installation; unsigned Cosign-mode, wrong-key and wrong-pin rejection\n'

@@ -1,8 +1,9 @@
 # mise-oci
 
 A Lua backend plugin for [mise](https://mise.jdx.dev/) that installs native CLI
-binaries from signed, multi-platform OCI artifacts. ORAS handles registry access;
-Cosign verifies signatures and transparency-log evidence before installation.
+binaries from multi-platform OCI artifacts. ORAS handles registry access;
+By default, Cosign verifies signatures and transparency-log evidence before
+installation. Explicit digest-only mode trusts an independently reviewed index pin.
 No container runtime is used.
 
 ## Requirements
@@ -55,7 +56,7 @@ Replace `issuer` and `subject` with a local public-key path:
 ```
 
 Configure exactly one trust mode: a public key, or **both** an exact issuer and
-an exact subject. No regex matching and no skip-verification option are exposed.
+an exact subject. No regex matching is used. Digest-only mode is a separate, explicit trust choice.
 Public-key signatures must also have valid transparency-log evidence. Cosign's
 normal trusted Sigstore roots are used; this plugin does not configure private
 Fulcio/Rekor deployments. Public keys must be provisioned independently of the
@@ -72,6 +73,24 @@ in `mise.lock`. A version tag plus signature authorizes the configured publisher
 but does not freeze a mutable tag. Use an explicit `digest` for reproducibility;
 `mise.lock` alone is insufficient for this backend. Already installed versions are
 not reverified on each execution, as with other mise tools.
+
+### Digest-only verification
+
+For an artifact you have independently reviewed, explicitly choose digest-only
+verification and pin its index:
+
+```toml
+"oci:mytool" = { version = "1.2.3", repository = "ghcr.io/myorg/mytool", verification = "digest", digest = "sha256:<64 hex characters>" }
+```
+
+This mode does not call Cosign and needs no signature. It still checks the exact
+index, selected platform manifest and archive against their SHA-256 digests.
+Missing pins, malformed digests and mismatches fail installation. Signer options
+are rejected in digest-only mode to avoid suggesting they are being checked.
+Cosign remains a static plugin dependency, but is unused in this mode.
+
+Omitting `verification` means `verification = "cosign"`. A digest pin alone never
+disables signature verification. There is no tag-only, unverified mode.
 
 ## Artifact contract
 
@@ -98,7 +117,7 @@ mytool:v1.2.3 -> signed OCI image index
   `tag_prefix` (e.g. `v`). Signature/referrer tags are ignored. Versions are
   ordered with SemVer prerelease precedence.
 
-The plugin resolves the version tag once, verifies that **index digest**, hashes
+The plugin resolves the version tag once, applies the configured trust check to that **index digest**, hashes
 its raw bytes, selects the platform, checks the child's size/digest against the
 index and the archive's size/digest against the child. It fetches only by digest
 after resolution. Each command is bounded by a timeout. Tar streams the single
@@ -121,7 +140,7 @@ DIGEST=$(oras resolve ghcr.io/myorg/mytool:v1.2.3)
 cosign sign --yes "ghcr.io/myorg/mytool@$DIGEST"
 ```
 
-Only the index needs a signature: its digests bind the selected manifest and
+In default Cosign mode, only the index needs a signature: its digests bind the selected manifest and
 archive. A signature on a child alone does not authorize the index. Publish all
 children before the index and sign before announcing the version. Keep build
 tags immutable/unique, or construct the index from child digests. ORAS's index
@@ -135,6 +154,7 @@ includes a Rekor entry; do not disable transparency-log upload.
 
 | Option | Meaning |
 | --- | --- |
+| `verification` | `cosign` (default) or `digest` (requires a pin, no signer options). |
 | `repository` | Required `registry/path`, without tag or digest. |
 | `tag_prefix` | Optional literal prefix, default empty. |
 | `binary` | Root archive filename and installed executable; defaults to the tool's final path component. |
@@ -159,7 +179,7 @@ Lua targets **5.1**, matching mise's embedded runtime. StyLua formatting and
 LuaLS diagnostics run in CI. Unit tests cover trust configuration, SemVer,
 platform selection, malformed descriptors, archive safety and fail-closed
 orchestration. The integration test uses real ORAS, Cosign, Rekor and a local TLS
-registry, installs through mise, and checks wrong-key/pin failures. It requires
+registry, installs through mise, and checks wrong-key/pin failures and installation of an unsigned, pinned index. It requires
 Docker and OpenSSL; it does not alter the global mise installation.
 
 The test fixture publisher uses throwaway local keys; production signing should

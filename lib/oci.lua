@@ -74,7 +74,9 @@ function M.install(ctx)
     local digest = contract.digest(resolved)
     assert(not options.digest or digest == options.digest, "configured index digest does not match resolved tag")
     local ref = options.repository .. "@" .. digest
-    verify(ref, options)
+    if options.verification == "cosign" then
+        verify(ref, options)
+    end
 
     local index = manifest(options.repository, digest, file.join_path(ctx.download_path, "index.json"))
     local selected = contract.select(index, os_name, arch)
@@ -111,7 +113,7 @@ function M.install(ctx)
         STAGED = destination .. ".partial",
     })
     file.move(destination .. ".partial", destination)
-    print("Verified OCI index " .. digest .. " (" .. os_name .. "/" .. arch .. ")")
+    print("Verified OCI index " .. digest .. " (" .. os_name .. "/" .. arch .. ", " .. options.verification .. ")")
 end
 
 return M
