@@ -1,0 +1,4 @@
+.test/
+.check/
+*.log
+*.key

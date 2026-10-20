@@ -1,0 +1,22 @@
+[tools]
+lua = "5.1.5"
+stylua = "2.6.0"
+lua-language-server = "3.19.2"
+oras = "1.3.4"
+cosign = "3.1.3"
+
+[tasks.format]
+run = "stylua metadata.lua hooks lib tests"
+
+[tasks.lint]
+run = ["stylua --check metadata.lua hooks lib tests", "lua-language-server --check=. --checklevel=Warning"]
+
+[tasks.test]
+run = "lua tests/run.lua"
+
+[tasks.ci]
+run = ["mise run lint", "mise run test"]
+
+[tasks.integration]
+description = "Real OCI index, Cosign/Rekor and mise installation (Docker required)"
+run = "bash tests/integration.sh"

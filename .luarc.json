@@ -1,0 +1,9 @@
+{
+  "runtime.version": "Lua 5.1",
+  "runtime.path": ["?.lua", "lib/?.lua"],
+  "diagnostics.globals": ["PLUGIN", "RUNTIME"],
+  "diagnostics.disable": ["duplicate-set-field"],
+  "workspace.checkThirdParty": false,
+  "workspace.library": ["types"],
+  "workspace.ignoreDir": [".git", "test-output"]
+}
