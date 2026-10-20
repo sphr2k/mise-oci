@@ -6,7 +6,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/mise-oci-test.XXXXXX")
 container="mise-oci-test-${RANDOM}-${RANDOM}"
 cleanup() {
     docker rm -f "$container" >/dev/null 2>&1 || true
-    rm -f "$work/test.key" "$work/wrong.key" "$work/tls.key"
+    rm -f "$work/test.key" "$work/wrong.key" "$work/tls.key" "$work/certs/tls.key"
 }
 trap cleanup EXIT
 printf 'Integration evidence: %s\n' "$work"

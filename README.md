@@ -152,6 +152,9 @@ mise run ci
 mise run integration
 ```
 
+On Debian/Ubuntu, install `libreadline-dev` before building the development Lua
+interpreter through mise. This is not needed by plugin consumers.
+
 Lua targets **5.1**, matching mise's embedded runtime. StyLua formatting and
 LuaLS diagnostics run in CI. Unit tests cover trust configuration, SemVer,
 platform selection, malformed descriptors, archive safety and fail-closed

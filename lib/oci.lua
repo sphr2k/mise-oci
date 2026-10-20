@@ -87,7 +87,7 @@ function M.install(ctx)
     local staged = file.join_path(ctx.download_path, "binary")
     -- Stream one regular member to a fixed file; never let tar choose filesystem paths.
     run(
-        'ulimit -f 524288; tar -xOzf "$ARCHIVE" "$MEMBER" > "$FILE"',
+        'ulimit -f 524288 && tar -xOzf "$ARCHIVE" "$MEMBER" > "$FILE"',
         { ARCHIVE = archive, MEMBER = member, FILE = staged }
     )
     local stat = file.stat(staged)
@@ -98,7 +98,7 @@ function M.install(ctx)
     run('chmod 755 "$FILE"', { FILE = staged })
     local destination = file.join_path(ctx.install_path, "bin", options.binary)
     -- Stage on the installation filesystem, then publish by rename.
-    run('mkdir -p "$DIR"; cp "$SOURCE" "$STAGED"; chmod 755 "$STAGED"', {
+    run('mkdir -p "$DIR" && cp "$SOURCE" "$STAGED" && chmod 755 "$STAGED"', {
         DIR = file.join_path(ctx.install_path, "bin"),
         SOURCE = staged,
         STAGED = destination .. ".partial",
