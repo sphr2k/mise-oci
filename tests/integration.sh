@@ -21,7 +21,16 @@ docker run --detach --name "$container" -p 127.0.0.1::5000 \
     -e REGISTRY_HTTP_TLS_KEY=/certs/tls.key registry:3 > "$work/registry-id"
 port=$(docker port "$container" 5000/tcp | sed 's/.*://')
 repository="localhost.:$port/mise-oci-test"
-export SSL_CERT_FILE="$work/certs/tls.crt"
+system_ca=${SSL_CERT_FILE:-}
+if [ -z "$system_ca" ]; then
+    for candidate in /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem /etc/pki/tls/certs/ca-bundle.crt; do
+        if [ -r "$candidate" ]; then system_ca=$candidate; break; fi
+    done
+fi
+[ -n "$system_ca" ] || { echo 'System CA bundle not found' >&2; exit 1; }
+# Rust TLS consumers replace, rather than augment, roots with SSL_CERT_FILE.
+cat "$system_ca" "$work/certs/tls.crt" > "$work/certs/trust.pem"
+export SSL_CERT_FILE="$work/certs/trust.pem"
 for attempt in $(seq 1 30); do
     if curl --silent --fail --cacert "$SSL_CERT_FILE" "https://localhost:$port/v2/" >/dev/null; then break; fi
     if [ "$attempt" = 30 ]; then exit 1; fi
