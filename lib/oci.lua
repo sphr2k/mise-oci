@@ -1,4 +1,5 @@
 local cmd = require("cmd")
+local env = require("env")
 local file = require("file")
 local json = require("json")
 local contract = require("contract")
@@ -22,6 +23,50 @@ local function check_file(path, descriptor)
     local stat = file.stat(path)
     assert(stat and stat.is_file and not stat.is_symlink and stat.size == descriptor.size, "download size mismatch")
     assert(hash(path) == contract.digest(descriptor.digest), "download digest mismatch")
+end
+
+-- Cache only immutable archive bytes. Copy before checking so another writer
+-- cannot change the bytes between verification and extraction.
+local function archive_blob(repository, descriptor, destination)
+    local root = env.getenv("MISE_CACHE_DIR")
+    local cached
+    if root and root ~= "" then
+        cached = file.join_path(root, "mise-oci", "archives", "sha256", descriptor.digest:sub(8))
+        local ok = pcall(function()
+            run('test -f "$CACHE" && test ! -L "$CACHE" && cp "$CACHE" "$FILE"', {
+                CACHE = cached,
+                FILE = destination,
+            })
+            check_file(destination, descriptor)
+        end)
+        if ok then
+            return
+        end
+    end
+    run('oras blob fetch --plain-http=false --output "$FILE" "$REF"', {
+        FILE = destination,
+        REF = repository .. "@" .. descriptor.digest,
+    })
+    check_file(destination, descriptor)
+    if cached then
+        -- A private temporary directory and same-filesystem rename prevent
+        -- readers from observing a partial publication. Concurrent downloads
+        -- may duplicate work, but all published bytes have been verified.
+        pcall(function()
+            run(
+                'test -d "$ROOT" && mkdir -p "$DIR" && '
+                    .. 'STAGE=$(mktemp -d "$DIR/.partial.XXXXXXXX") && '
+                    .. "trap 'rm -rf \"$STAGE\"' EXIT HUP INT TERM; "
+                    .. 'test -n "$STAGE" && cp "$FILE" "$STAGE/blob" && mv -f "$STAGE/blob" "$CACHE"',
+                {
+                    ROOT = root,
+                    DIR = file.join_path(root, "mise-oci", "archives", "sha256"),
+                    FILE = destination,
+                    CACHE = cached,
+                }
+            )
+        end)
+    end
 end
 
 local function manifest(repository, digest, path, descriptor)
@@ -84,11 +129,7 @@ function M.install(ctx)
         manifest(options.repository, selected.digest, file.join_path(ctx.download_path, "manifest.json"), selected)
     local layer = contract.archive(child)
     local archive = file.join_path(ctx.download_path, "tool.tar.gz")
-    run(
-        'oras blob fetch --plain-http=false --output "$FILE" "$REF"',
-        { FILE = archive, REF = options.repository .. "@" .. layer.digest }
-    )
-    check_file(archive, layer)
+    archive_blob(options.repository, layer, archive)
 
     local listing = run('tar -tzf "$ARCHIVE"', { ARCHIVE = archive })
     local verbose = run('tar -tvzf "$ARCHIVE"', { ARCHIVE = archive })
