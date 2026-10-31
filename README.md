@@ -188,3 +188,17 @@ artifact; this plugin does not validate SLSA provenance predicates.
 
 `types/mise-plugin.lua` comes from jdx/mise-backend-plugin-template; its upstream
 license is retained in `types/LICENSE`.
+
+### Shared archive download cache
+
+Set `MISE_CACHE_DIR` to an existing directory to share downloaded OCI archives
+between otherwise separate mise installations. The plugin stores only archive
+bytes at `$MISE_CACHE_DIR/mise-oci/archives/sha256/<64-character digest>`.
+Install directories, executables, credentials, tag resolution, manifests and
+signature verification remain independent. Every cache read copies the archive
+to the installation download directory and checks its descriptor size and SHA-256
+before extraction. Corrupt entries are downloaded again and replaced atomically.
+Concurrent installers may download the same missing archive, but never publish
+partial entries. Missing or unwritable cache directories fall back to downloading;
+the plugin does not create the configured cache root. Delete the `mise-oci`
+subdirectory to reclaim cache space.

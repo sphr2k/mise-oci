@@ -194,12 +194,28 @@ test("invalid tags are not versions", function()
 end)
 
 -- Exercise the real orchestration with mocked boundaries, including stop-on-failure.
-local calls, files, fail, raw_index, raw_manifest
+local calls, files, fail, raw_index, raw_manifest, cache_root, cached_bytes
+package.loaded.env = {
+    getenv = function()
+        return cache_root
+    end,
+}
 package.loaded.cmd = {
     exec = function(command, ctx)
         calls[#calls + 1] = { command = command, env = ctx.env }
+        if command:find("${MISE_CACHE_DIR-}", 1, true) then
+            return cache_root or ""
+        end
         if fail and command:find(fail, 1, true) then
             error("fixture failure: " .. fail)
+        end
+        if command:find('test -f "$CACHE"', 1, true) then
+            assert(cached_bytes, "cache miss")
+            files[ctx.env.FILE] = cached_bytes
+        elseif command:find("mktemp -d", 1, true) then
+            cached_bytes = files[ctx.env.FILE]
+        elseif command:find("oras blob fetch", 1, true) then
+            files[ctx.env.FILE] = "valid archive"
         end
         if command:find("oras resolve", 1, true) then
             return digest .. "\n"
@@ -208,7 +224,7 @@ package.loaded.cmd = {
             files[ctx.env.FILE] = ctx.env.FILE:match("index.json$") and raw_index or raw_manifest
         end
         if command:find("sha256sum", 1, true) then
-            return string.rep("a", 64) .. "  file\n"
+            return string.rep(files[ctx.env.FILE] == "corrupt" and "b" or "a", 64) .. "  file\n"
         end
         if command:find("tar -tzf", 1, true) then
             return "tool\n"
@@ -223,8 +239,8 @@ package.loaded.file = {
     join_path = function(...)
         return table.concat({ ... }, "/")
     end,
-    stat = function()
-        return { is_file = true, is_symlink = false, size = 123 }
+    stat = function(path)
+        return { is_file = true, is_symlink = false, size = files[path] == "wrong size" and 122 or 123 }
     end,
     read = function(path)
         return files[path]
@@ -242,6 +258,7 @@ RUNTIME = { osType = "linux", archType = "amd64" }
 local oci = require("oci")
 local function setup()
     calls, files, fail = {}, {}, nil
+    cache_root, cached_bytes = nil, nil
     raw_index = index({ child })
     raw_manifest = {
         schemaVersion = 2,
@@ -337,5 +354,35 @@ test("exact keyless identity is passed without shell interpolation", function()
     assert(call.env.SUBJECT == ctx.options.subject)
     assert(not call.command:find("pipeline.example", 1, true))
     assert(not call.command:find("regexp", 1, true))
+end)
+test("archive cache reuses bytes but always verifies signatures and integrity", function()
+    local ctx = setup()
+    cache_root = "/cache with spaces"
+    oci.install(ctx)
+    assert(command_index("oras blob fetch"))
+    assert(cached_bytes == "valid archive")
+    calls = {}
+    oci.install(ctx)
+    assert(not command_index("oras blob fetch"))
+    assert(command_index("cosign verify"))
+    assert(command_index("sha256sum"))
+    cached_bytes = "corrupt"
+    calls = {}
+    oci.install(ctx)
+    assert(command_index("oras blob fetch"))
+    assert(cached_bytes == "valid archive")
+    cached_bytes = "wrong size"
+    calls = {}
+    oci.install(ctx)
+    assert(command_index("oras blob fetch"))
+    assert(cached_bytes == "valid archive")
+end)
+test("cache publication failure does not prevent installation", function()
+    local ctx = setup()
+    cache_root = "/unwritable cache"
+    fail = "mktemp -d"
+    oci.install(ctx)
+    assert(command_index("oras blob fetch"))
+    assert(calls[#calls].command == "publish")
 end)
 print("1.." .. count)
