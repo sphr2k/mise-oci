@@ -203,6 +203,9 @@ package.loaded.env = {
 package.loaded.cmd = {
     exec = function(command, ctx)
         calls[#calls + 1] = { command = command, env = ctx.env }
+        if command:find("${MISE_CACHE_DIR-}", 1, true) then
+            return cache_root or ""
+        end
         if fail and command:find(fail, 1, true) then
             error("fixture failure: " .. fail)
         end

@@ -1,5 +1,4 @@
 local cmd = require("cmd")
-local env = require("env")
 local file = require("file")
 local json = require("json")
 local contract = require("contract")
@@ -28,7 +27,7 @@ end
 -- Cache only immutable archive bytes. Copy before checking so another writer
 -- cannot change the bytes between verification and extraction.
 local function archive_blob(repository, descriptor, destination)
-    local root = env.getenv("MISE_CACHE_DIR")
+    local root = run('printf "%s" "${MISE_CACHE_DIR-}"')
     local cached
     if root and root ~= "" then
         cached = file.join_path(root, "mise-oci", "archives", "sha256", descriptor.digest:sub(8))
