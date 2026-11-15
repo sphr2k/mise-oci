@@ -385,4 +385,21 @@ test("cache publication failure does not prevent installation", function()
     assert(command_index("oras blob fetch"))
     assert(calls[#calls].command == "publish")
 end)
+test("Cosign TUF cache is scoped to each tool download", function()
+    local roots = {}
+    for _, keyless in ipairs({ false, true }) do
+        local ctx = setup()
+        ctx.download_path = keyless and "/second tool download" or "/first tool download"
+        if keyless then
+            ctx.options.public_key = nil
+            ctx.options.issuer = "https://issuer.example"
+            ctx.options.subject = "https://pipeline.example"
+        end
+        oci.install(ctx)
+        local call = calls[command_index("cosign verify")]
+        assert(call.env.TUF_ROOT == ctx.download_path .. "/tuf", "verification must own its TUF cache")
+        roots[#roots + 1] = call.env.TUF_ROOT
+    end
+    assert(roots[1] ~= roots[2], "parallel tools must not share metadata")
+end)
 print("1.." .. count)
