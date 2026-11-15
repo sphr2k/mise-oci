@@ -83,13 +83,17 @@ local function manifest(repository, digest, path, descriptor)
     return json.decode(file.read(path))
 end
 
-local function verify(ref, options)
+local function verify(ref, options, download_path)
+    -- Parallel installs must not overwrite one another's TUF metadata between
+    -- the updater's atomic rename and read-back verification.
+    local tuf_root = file.join_path(download_path, "tuf")
     if options.key then
-        run('cosign verify --timeout 90s --key "$KEY" "$REF"', { KEY = options.key, REF = ref })
+        run('cosign verify --timeout 90s --key "$KEY" "$REF"', { KEY = options.key, REF = ref, TUF_ROOT = tuf_root })
     else
         run(
             'cosign verify --timeout 90s --certificate-oidc-issuer "$ISSUER" --certificate-identity "$SUBJECT" "$REF"',
             {
+                TUF_ROOT = tuf_root,
                 ISSUER = options.issuer,
                 SUBJECT = options.subject,
                 REF = ref,
@@ -119,7 +123,7 @@ function M.install(ctx)
     assert(not options.digest or digest == options.digest, "configured index digest does not match resolved tag")
     local ref = options.repository .. "@" .. digest
     if options.verification == "cosign" then
-        verify(ref, options)
+        verify(ref, options, ctx.download_path)
     end
 
     local index = manifest(options.repository, digest, file.join_path(ctx.download_path, "index.json"))
